@@ -74,7 +74,7 @@ func gLoadPEModule1(fileName string, vSize *uint64, executable, relocate bool) u
 		return 0
 	}
 	mappedDll := gLoadPEModule2(dllRawData, rSize, vSize, executable, relocate)
-	FreePEBuffer(dllRawData, 0)
+	gFreePEBuffer(dllRawData, 0)
 	return mappedDll
 }
 
@@ -96,7 +96,7 @@ func GetNTHdrs(peBuffer uintptr, bufferSize uint64) uintptr {
 	}
 	idh := (*IMAGE_DOS_HEADER)(unsafe.Pointer(peBuffer))
 	if bufferSize != 0 {
-		if !ValidatePtr(
+		if !gValidatePtr(
 			peBuffer,
 			bufferSize,
 			uintptr(unsafe.Pointer(idh)),
@@ -122,7 +122,7 @@ func GetNTHdrs(peBuffer uintptr, bufferSize uint64) uintptr {
 
 	inh := (*IMAGE_NT_HEADERS)(unsafe.Pointer(peBuffer + uintptr(peOffset)))
 	if bufferSize != 0 {
-		if !ValidatePtr(
+		if !gValidatePtr(
 			peBuffer,
 			bufferSize,
 			uintptr(unsafe.Sizeof(inh)),
@@ -258,7 +258,9 @@ func gSectionsRawToVirtual(
 		log.Println("Invalid payload: ", payload)
 		return false
 	}
-
+	log.Println("________________GO SECTIONS RAW TO VIRTUAL START___________")
+	//log.Printf("Payload: %X\n", *((*[]byte)(unsafe.Pointer(payload))))
+	log.Printf("Payload NT Header: %X\n", payloadNTHdr)
 	var fileHdr *pe.FileHeader
 	var hdrSize uint32
 	var secptr uintptr
@@ -266,21 +268,24 @@ func gSectionsRawToVirtual(
 		payloadNTHdr64 := (*IMAGE_NT_HEADERS64)(unsafe.Pointer(payloadNTHdr))
 		fileHdr = &(payloadNTHdr64.FileHeader)
 		hdrSize = payloadNTHdr64.OptionalHeader.SizeOfHeaders
-		secptr = uintptr(unsafe.Pointer(&payloadNTHdr64.OptionalHeader)) + uintptr(fileHdr.SizeOfOptionalHeader)
+		secptr = uintptr(unsafe.Pointer(&(payloadNTHdr64.OptionalHeader))) + uintptr(fileHdr.SizeOfOptionalHeader)
 	} else {
 		payloadNTHdr32 := (*IMAGE_NT_HEADERS)(unsafe.Pointer(payloadNTHdr))
 		fileHdr = &(payloadNTHdr32.FileHeader)
 		hdrSize = payloadNTHdr32.OptionalHeader.SizeOfHeaders
-		secptr = uintptr(unsafe.Pointer(&payloadNTHdr32.OptionalHeader)) + uintptr(fileHdr.SizeOfOptionalHeader)
+		secptr = uintptr(unsafe.Pointer(&(payloadNTHdr32.OptionalHeader))) + uintptr(fileHdr.SizeOfOptionalHeader)
 	}
-
+	log.Printf("Secptr: %X\n", secptr)
+	log.Printf("Size of PE.SECTION_HEADER: %d\n", unsafe.Sizeof(pe.SectionHeader32{}))
 	var firstRaw uint32
 	//copy all the sections, one by one:
 	//var rawEnd uint64
 	var i uint16
 	for i = 0; i < fileHdr.NumberOfSections; i++ {
-		nextSec := (*pe.SectionHeader)(unsafe.Pointer(secptr + uintptr(IMAGE_SIZEOF_SECTION_HEADER*i)))
-		if !ValidatePtr(
+		//HERE IS ERROR nextSec first cycle need to be = secptr!!!
+		nextSec := (*pe.SectionHeader32)(unsafe.Pointer(secptr + uintptr(IMAGE_SIZEOF_SECTION_HEADER*i)))
+		log.Printf("NextSec: %X\n", nextSec)
+		if !gValidatePtr(
 			payload,
 			destBufferSize,
 			uintptr(unsafe.Pointer(nextSec)),
@@ -288,46 +293,46 @@ func gSectionsRawToVirtual(
 		) {
 			return false
 		}
-		if nextSec.Offset == 0 || nextSec.Size == 0 {
+		if nextSec.PointerToRawData == 0 || nextSec.SizeOfRawData == 0 {
 			continue //skipping empty
 		}
 		sectionMapped := destBuffer + uintptr(nextSec.VirtualAddress)
-		sectionRawPtr := payload + uintptr(nextSec.Offset)
-		secSize := nextSec.Size
+		sectionRawPtr := payload + uintptr(nextSec.PointerToRawData)
+		secSize := uint64(nextSec.SizeOfRawData)
 		//rawEnd = uint64(nextSec.Size + nextSec.Offset)
 
-		if uint64(nextSec.VirtualAddress+secSize) > destBufferSize {
+		if (uint64(nextSec.VirtualAddress) + secSize) > destBufferSize {
 			log.Println("[!] Virtual section size is out ouf bounds: ", secSize)
 			if destBufferSize > uint64(nextSec.VirtualAddress) {
-				secSize = uint32(destBufferSize) - nextSec.VirtualAddress
+				secSize = destBufferSize - uint64(nextSec.VirtualAddress)
 			} else {
 				secSize = 0
 			}
 			log.Printf("[!] Truncated to maximal size: %d, buffer size: %d", secSize, destBufferSize)
 		}
 
-		if uint64(nextSec.VirtualAddress) >= destBufferSize && secSize != 0 {
+		if (uint64(nextSec.VirtualAddress) >= destBufferSize) && secSize != 0 {
 			log.Println("[-] VirtualAddress of section is out ouf bounds: ", nextSec.VirtualAddress)
 			return false
 		}
-		if uint64(nextSec.Offset+secSize) > destBufferSize {
+		if (uint64(nextSec.PointerToRawData) + secSize) > destBufferSize {
 			log.Println("[-] Raw section size is out ouf bounds: ", secSize)
 			return false
 		}
 		// validate source:
-		if !ValidatePtr(payload, payloadSize, sectionRawPtr, uint64(secSize)) {
+		if !gValidatePtr(payload, payloadSize, sectionRawPtr, secSize) {
 			log.Printf("[-] Section %d:  out ouf bounds, skipping... \n", i)
 			continue
 		}
 		// validate destination:
-		if !ValidatePtr(destBuffer, destBufferSize, sectionMapped, uint64(secSize)) {
+		if !gValidatePtr(destBuffer, destBufferSize, sectionMapped, secSize) {
 			log.Printf("[-] Section %d:  out ouf bounds, skipping... \n", i)
 			continue
 		}
 		mem.Memcpy(
 			unsafe.Pointer(sectionMapped), unsafe.Pointer(sectionRawPtr), int(secSize))
-		if firstRaw == 0 || nextSec.Offset < firstRaw {
-			firstRaw = nextSec.Offset
+		if firstRaw == 0 || (nextSec.PointerToRawData < firstRaw) {
+			firstRaw = nextSec.PointerToRawData
 		}
 	}
 
@@ -336,11 +341,59 @@ func gSectionsRawToVirtual(
 		hdrSize = firstRaw
 		log.Println("hdrsSize not filled, using calculated size: ", hdrSize)
 	}
-	if !ValidatePtr(payload, destBufferSize, payload, uint64(hdrSize)) {
+	if !gValidatePtr(payload, destBufferSize, payload, uint64(hdrSize)) {
 		return false
 	}
 	mem.Memcpy(
 		unsafe.Pointer(destBuffer), unsafe.Pointer(payload), int(hdrSize))
+	log.Printf("DestBuffer ptr: %X\n", destBuffer)
+	//log.Printf("DestBuffer: %X\n", *((*[]byte)(unsafe.Pointer(destBuffer))))
+	log.Printf("________________GO SECTIONS RAW TO VIRTUAL END___________\n")
+	return true
+}
+
+//VirtualFree func
+func VirtualFree(lpAddress uintptr, dwSize uint64, dwFreeType uint32) bool {
+	r, _, _ := procVirtualFree.Call(lpAddress, uintptr(dwSize), uintptr(dwFreeType))
+	return r != 0
+}
+
+//FreeAligned func
+func FreeAligned(buffer uintptr, bufferSize uint64) bool {
+	if buffer == 0 {
+		return true
+	}
+	if !VirtualFree(buffer, 0, MEM_RELEASE) {
+		log.Println("Releasing failed")
+		return false
+	}
+	return true
+}
+
+//gFreePEBuffer func
+func gFreePEBuffer(buffer uintptr, bufferSize uint64) bool {
+	return FreeAligned(buffer, bufferSize)
+}
+
+//gValidatePtr func
+func gValidatePtr(
+	bufferBgn uintptr, bufferSize uint64, fieldBgn uintptr, fieldSize uint64,
+) bool {
+	if bufferBgn == 0 || fieldBgn == 0 {
+		return false
+	}
+	start := bufferBgn
+	end := start + uintptr(bufferSize)
+
+	fieldStart := fieldBgn
+	fieldEnd := fieldStart + uintptr(fieldSize)
+
+	if fieldStart < start {
+		return false
+	}
+	if fieldEnd > end {
+		return false
+	}
 	return true
 }
 
@@ -378,12 +431,92 @@ func gPERawToVirtual(
 		return 0
 	}
 
-	if !SectionsRawToVirtual(payload, inSize, localCopyAddress, uint64(payloadImageSize)) {
+	if !gSectionsRawToVirtual(payload, inSize, localCopyAddress, uint64(payloadImageSize)) {
 		log.Println("Could not copy PE file")
 		return 0
 	}
 	*outSize = uint64(payloadImageSize)
 	return localCopyAddress
+}
+
+//GetSubSystem func
+func GetSubSystem(payload uintptr) uint16 {
+	if payload == 0 {
+		return 0
+	}
+	is64b := gIs64Bit(payload)
+	payloadNTHdr := GetNTHdrs(payload, 0)
+	if payloadNTHdr == 0 {
+		return 0
+	}
+	if is64b {
+		payloadNTHdr64 := (*IMAGE_NT_HEADERS64)(unsafe.Pointer(payloadNTHdr))
+		return payloadNTHdr64.OptionalHeader.Subsystem
+	} else {
+		payloadNTHdr32 := (*IMAGE_NT_HEADERS)(unsafe.Pointer(payloadNTHdr))
+		return payloadNTHdr32.OptionalHeader.Subsystem
+	}
+}
+
+//gIsTargetCompatible func
+func gIsTargetCompatible(
+	payloadBuf uintptr, payloadSize uint64, targetPath string) bool {
+	if payloadBuf == 0 {
+		log.Println("Incompatibile target")
+		return false
+	}
+	payloadSubs := GetSubSystem(payloadBuf)
+
+	var targetSize uint64
+	targetPE := gLoadPEModule1(targetPath, &targetSize, false, false)
+	if targetPE == 0 {
+		log.Println("Incompatibile target")
+		return false
+	}
+	targetSubs := GetSubSystem(targetPE)
+	is64bitTarget := gIs64Bit(targetPE)
+	gFreePEBuffer(targetPE, 0)
+	targetPE = 0
+	targetSize = 0
+
+	if is64bitTarget != gIs64Bit(payloadBuf) {
+		log.Println("Incompatibile target bitness!")
+		return false
+	}
+	//only a payload with GUI subsystem can be run by both GUI and CLI
+	if payloadSubs != IMAGE_SUBSYSTEM_WINDOWS_GUI && targetSubs != payloadSubs {
+		log.Println("Incompatibile target subsystem!")
+		return false
+	}
+	return true
+}
+
+//gCreateSuspendedProcess func
+func gCreateSuspendedProcess(path string, pi *syscall.ProcessInformation) bool {
+	var si syscall.StartupInfo
+	mem.Memset(
+		unsafe.Pointer(&si), 0, int(unsafe.Sizeof(syscall.StartupInfo{})))
+	si.Cb = uint32(unsafe.Sizeof(syscall.StartupInfo{}))
+
+	mem.Memset(
+		unsafe.Pointer(pi), 0, int(unsafe.Sizeof(syscall.ProcessInformation{})))
+
+	if err := syscall.CreateProcess(
+		nil,
+		syscall.StringToUTF16Ptr(path),
+		nil,
+		nil,
+		false,
+		CREATE_SUSPENDED,
+		nil,
+		nil,
+		&si,
+		pi); err != nil {
+		log.Println("Error CreateProcess: ", err.Error())
+		return false
+	}
+	log.Println("ProcessID in C: ", pi.ProcessId)
+	return true
 }
 
 //gLoadFile func
@@ -457,17 +590,51 @@ func gLoadPEModule2(dllRawData uintptr, rSize uint64, vSize *uint64, executable,
 	}
 	// load a virtual image of the PE file at the desired_base address (random if desired_base is NULL):
 	mappedDll := gPERawToVirtual(dllRawData, rSize, vSize, executable, desiredBase)
-	fmt.Println("MAPPEDDLL: ", mappedDll)
+	fmt.Printf("MAPPEDDLL: %p\n", mappedDll)
 	if mappedDll != 0 {
 		//if the image was loaded at its default base, relocate_module will return always true (because relocating is already done)
 		if relocate && !gRelocateModule(mappedDll, *vSize, mappedDll, 0) {
 			// relocating was required, but it failed - thus, the full PE image is useless
 			log.Println("Could not relocate the module!")
-			FreePEBuffer(mappedDll, *vSize)
+			gFreePEBuffer(mappedDll, *vSize)
 			mappedDll = 0
 		}
 	} else {
 		log.Println("Could not allocate memory at the desired base!")
 	}
 	return mappedDll
+}
+
+//ResumeThread func
+func ResumeThread(hThread syscall.Handle) (count int32, e error) {
+	ret, _, err := procResumeThread.Call(uintptr(hThread))
+	if ret == 0xffffffff {
+		e = err
+	}
+	count = int32(ret)
+	log.Printf("ResumeThread[%v]: [%v] %v", hThread, ret, err)
+	return
+}
+
+//gRunPE2 func
+func gRunPE2(
+	loadedPE uintptr, payloadImageSize uint64, pi *syscall.ProcessInformation, is32bit bool,
+) bool {
+	if loadedPE == 0 {
+		return false
+	}
+
+	//1. Allocate memory for the payload in the remote process:
+
+	//2. Relocate the payload (local copy) to the Remote Base:
+
+	//3. Update the image base of the payload (local copy) to the Remote Base:
+
+	//4. Write the payload to the remote process, at the Remote Base:
+
+	//5. Redirect the remote structures to the injected payload (EntryPoint and ImageBase must be changed):
+
+	//6. Resume the thread and let the payload run:
+	ResumeThread(pi.Thread)
+	return true
 }

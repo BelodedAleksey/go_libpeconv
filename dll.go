@@ -53,4 +53,6 @@ var (
 	procGetFileSize  = modkernel32.NewProc("GetFileSize")
 	procIsBadReadPtr = modkernel32.NewProc("IsBadReadPtr")
 	procVirtualAlloc = modkernel32.NewProc("VirtualAlloc")
+	procVirtualFree  = modkernel32.NewProc("VirtualFree")
+	procResumeThread = modkernel32.NewProc("ResumeThread")
 )
