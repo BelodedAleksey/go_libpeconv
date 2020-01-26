@@ -146,3 +146,75 @@ func LoadFile(fileName string, readSize *uint64) uintptr {
 	}
 	return ret
 }
+
+//HasRelocations func
+func HasRelocations(peBuffer uintptr) bool {
+	ret, _, _ := procHasRelocations.Call(
+		peBuffer,
+	)
+	return ret != 0
+}
+
+//GetImageBase func
+func GetImageBase(peBuffer uintptr) uintptr {
+	ret, _, err := procGetImageBase.Call(
+		peBuffer,
+	)
+	if ret == 0 {
+		log.Println("Error get_image_base: ", err.Error())
+	}
+	return ret
+}
+
+//PERawToVirtual func
+func PERawToVirtual(
+	payload uintptr, inSize uint64, outSize *uint64, executable bool, desiredBase uintptr,
+) uintptr {
+	var exFlag int
+	if executable {
+		exFlag = 1
+	}
+	ret, _, err := procPERawToVirtual.Call(
+		payload,
+		uintptr(inSize),
+		uintptr(unsafe.Pointer(outSize)),
+		uintptr(exFlag),
+		desiredBase,
+	)
+	if ret == 0 {
+		log.Println("Error pe_raw_to_virtual: ", err.Error())
+	}
+	return ret
+}
+
+//RelocateModule func
+func RelocateModule(
+	modulePtr uintptr, moduleSize uint64, newBase, oldBase uintptr,
+) bool {
+	ret, _, err := procRelocateModule.Call(
+		modulePtr,
+		uintptr(moduleSize),
+		newBase,
+		oldBase,
+	)
+	if ret == 0 {
+		log.Println("Error relocate_module: ", err.Error())
+	}
+	return ret != 0
+}
+
+//ValidatePtr func
+func ValidatePtr(
+	bufferBgn uintptr, bufferSize uint64, fieldBgn uintptr, fieldSize uint64,
+) bool {
+	ret, _, err := procValidatePtr.Call(
+		bufferBgn,
+		uintptr(bufferSize),
+		fieldBgn,
+		uintptr(fieldSize),
+	)
+	if ret == 0 {
+		log.Println("Error validate_ptr: ", err.Error())
+	}
+	return ret != 0
+}

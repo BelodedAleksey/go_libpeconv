@@ -31,6 +31,16 @@ var (
 	procGetSubSystem = peconv.MustFindProc("_ZN6peconv13get_subsystemEPKh")
 	//BYTE* peconv::get_nt_hdrs(IN const BYTE *pe_buffer, IN OPTIONAL size_t buffer_size)
 	procGetNTHdrs = peconv.MustFindProc("_ZN6peconv11get_nt_hdrsEPKhy")
+	//bool peconv::has_relocations(IN const BYTE *pe_buffer)
+	procHasRelocations = peconv.MustFindProc("_ZN6peconv15has_relocationsEPKh")
+	//ULONGLONG peconv::get_image_base(IN const BYTE *pe_buffer)
+	procGetImageBase = peconv.MustFindProc("_ZN6peconv14get_image_baseEPKh")
+	//BYTE* peconv::pe_raw_to_virtual(IN const BYTE* payload, IN size_t in_size, OUT size_t &out_size, IN OPTIONAL bool executable,	IN OPTIONAL ULONGLONG desired_base)
+	procPERawToVirtual = peconv.MustFindProc("_ZN6peconv17pe_raw_to_virtualEPKhyRyby")
+	//bool peconv::relocate_module(IN BYTE* modulePtr, IN SIZE_T moduleSize, IN ULONGLONG newBase, IN ULONGLONG oldBase)
+	procRelocateModule = peconv.MustFindProc("_ZN6peconv15relocate_moduleEPhyyy")
+	//bool peconv::validate_ptr(IN const void *buffer_bgn, IN SIZE_T buffer_size, IN const void *field_bgn, IN SIZE_T field_size)
+	procValidatePtr = peconv.MustFindProc("_ZN6peconv12validate_ptrEPKvyS1_y")
 )
 
 var (
