@@ -233,3 +233,19 @@ func ApplyRelocations(
 	}
 	return ret != 0
 }
+
+//SectionsRawToVirtual func
+func SectionsRawToVirtual(
+	payload uintptr, payloadSize uint64, destBuffer uintptr, destBufferSize uint64,
+) bool {
+	ret, _, err := procSectionsRawToVirtual.Call(
+		payload,
+		uintptr(payloadSize),
+		destBuffer,
+		uintptr(destBufferSize),
+	)
+	if ret == 0 {
+		log.Println("Error sections_raw_to_virtual: ", err.Error())
+	}
+	return ret != 0
+}

@@ -43,6 +43,8 @@ var (
 	procValidatePtr = peconv.MustFindProc("_ZN6peconv12validate_ptrEPKvyS1_y")
 	//bool apply_relocations(PVOID modulePtr, SIZE_T moduleSize, ULONGLONG newBase, ULONGLONG oldBase)
 	procApplyRelocations = peconv.MustFindProc("_Z17apply_relocationsPvyyy")
+	//bool sections_raw_to_virtual(IN const BYTE *payload, IN SIZE_T payloadSize, OUT BYTE *destBuffer, IN SIZE_T destBufferSize)
+	procSectionsRawToVirtual = peconv.MustFindProc("_Z23sections_raw_to_virtualPKhyPhy")
 )
 
 var (

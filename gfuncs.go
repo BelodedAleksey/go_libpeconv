@@ -243,8 +243,8 @@ func AllocPEBuffer(bufferSize uint64, protect uint32, desiredBase uintptr) uintp
 	return AllocAligned(bufferSize, protect, uint64(desiredBase))
 }
 
-//SectionsRawToVirtual func
-func SectionsRawToVirtual(
+//gSectionsRawToVirtual func
+func gSectionsRawToVirtual(
 	payload uintptr, payloadSize uint64, destBuffer uintptr, destBufferSize uint64,
 ) bool {
 	if payload == 0 || destBuffer == 0 {
@@ -456,7 +456,8 @@ func gLoadPEModule2(dllRawData uintptr, rSize uint64, vSize *uint64, executable,
 		desiredBase = gGetImageBase(dllRawData)
 	}
 	// load a virtual image of the PE file at the desired_base address (random if desired_base is NULL):
-	mappedDll := PERawToVirtual(dllRawData, rSize, vSize, executable, desiredBase)
+	mappedDll := gPERawToVirtual(dllRawData, rSize, vSize, executable, desiredBase)
+	fmt.Println("MAPPEDDLL: ", mappedDll)
 	if mappedDll != 0 {
 		//if the image was loaded at its default base, relocate_module will return always true (because relocating is already done)
 		if relocate && !gRelocateModule(mappedDll, *vSize, mappedDll, 0) {
