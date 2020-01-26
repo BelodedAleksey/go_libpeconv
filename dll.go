@@ -41,6 +41,8 @@ var (
 	procRelocateModule = peconv.MustFindProc("_ZN6peconv15relocate_moduleEPhyyy")
 	//bool peconv::validate_ptr(IN const void *buffer_bgn, IN SIZE_T buffer_size, IN const void *field_bgn, IN SIZE_T field_size)
 	procValidatePtr = peconv.MustFindProc("_ZN6peconv12validate_ptrEPKvyS1_y")
+	//bool apply_relocations(PVOID modulePtr, SIZE_T moduleSize, ULONGLONG newBase, ULONGLONG oldBase)
+	procApplyRelocations = peconv.MustFindProc("_Z17apply_relocationsPvyyy")
 )
 
 var (

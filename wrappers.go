@@ -218,3 +218,18 @@ func ValidatePtr(
 	}
 	return ret != 0
 }
+
+//ApplyRelocations func
+func ApplyRelocations(
+	modulePtr uintptr, moduleSize uint64, newBase, oldBase uintptr) bool {
+	ret, _, err := procApplyRelocations.Call(
+		modulePtr,
+		uintptr(moduleSize),
+		newBase,
+		oldBase,
+	)
+	if ret == 0 {
+		log.Println("Error apply_relocations: ", err.Error())
+	}
+	return ret != 0
+}
