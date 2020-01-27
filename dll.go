@@ -47,6 +47,12 @@ var (
 	procSectionsRawToVirtual = peconv.MustFindProc("_Z23sections_raw_to_virtualPKhyPhy")
 	//bool redirect_to_payload(BYTE *loaded_pe, PVOID load_base, PROCESS_INFORMATION &pi, bool is32bit)
 	procRedirectToPayload = peconv.MustFindProc("_Z19redirect_to_payloadPhPvR20_PROCESS_INFORMATIONb")
+	//ULONGLONG get_remote_peb_addr(PROCESS_INFORMATION &pi, bool is32bit)
+	procGetRemotePebAddr = peconv.MustFindProc("_Z19get_remote_peb_addrR20_PROCESS_INFORMATIONb")
+	//BOOL update_remote_entry_point(PROCESS_INFORMATION &pi, ULONGLONG entry_point_va, bool is32bit)
+	procUpdateRemoteEntryPoint = peconv.MustFindProc("_Z25update_remote_entry_pointR20_PROCESS_INFORMATIONyb")
+	//DWORD peconv::get_entry_point_rva(IN const BYTE *pe_buffer)
+	procGetEntryPointRVA = peconv.MustFindProc("_ZN6peconv19get_entry_point_rvaEPKh")
 )
 
 var (

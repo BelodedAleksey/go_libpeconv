@@ -269,3 +269,47 @@ func RedirectToPayload(
 	}
 	return ret != 0
 }
+
+//GetRemotePebAddr func
+func GetRemotePebAddr(pi *syscall.ProcessInformation, is32bit bool) uintptr {
+	var bitFlag int
+	if is32bit {
+		bitFlag = 1
+	}
+	ret, _, err := procGetRemotePebAddr.Call(
+		uintptr(unsafe.Pointer(pi)),
+		uintptr(bitFlag),
+	)
+	if ret == 0 {
+		log.Println("Error get_remote_peb_addr: ", err.Error())
+	}
+	return ret
+}
+
+//UpdateRemoteEntryPoint func
+func UpdateRemoteEntryPoint(
+	pi *syscall.ProcessInformation, entryPointVA uintptr, is32bit bool,
+) bool {
+	var bitFlag int
+	if is32bit {
+		bitFlag = 1
+	}
+	ret, _, err := procUpdateRemoteEntryPoint.Call(
+		uintptr(unsafe.Pointer(pi)),
+		entryPointVA,
+		uintptr(bitFlag),
+	)
+	if ret == 0 {
+		log.Println("Error update_remote_entry_point: ", err.Error())
+	}
+	return ret != 0
+}
+
+//GetEntryPointRVA func
+func GetEntryPointRVA(peBuffer uintptr) uint32 {
+	ret, _, err := procGetEntryPointRVA.Call(peBuffer)
+	if ret == 0 {
+		log.Println("Error get_entry_point_rva: ", err.Error())
+	}
+	return uint32(ret)
+}

