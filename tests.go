@@ -62,7 +62,7 @@ func testGoSeparated() bool {
 
 	//3. Perform the actual RunPE:
 	//Test _run_pe
-	isOK := RunPE2(loadedPE, payloadImageSize, &pi, is32BitPayload)
+	isOK := gRunPE2(loadedPE, payloadImageSize, &pi, is32BitPayload)
 	fmt.Println("Is injection successfull in GO: ", isOK)
 
 	//4. Cleanup:

