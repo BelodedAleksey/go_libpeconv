@@ -313,3 +313,36 @@ func GetEntryPointRVA(peBuffer uintptr) uintptr {
 	}
 	return ret
 }
+
+//ProcessRelocBlock func
+func ProcessRelocBlock(
+	block *BASE_RELOCATION_ENTRY,
+	entriesNum uint64,
+	page uint32,
+	modulePtr uintptr,
+	moduleSize uint64,
+	is64bit bool,
+	oldBase uintptr,
+	newBase uintptr,
+) bool {
+	var bitFlag int
+	if is64bit {
+		bitFlag = 1
+	}
+
+	ret, _, err := procProcessRelocBlock.Call(
+		uintptr(unsafe.Pointer(block)),
+		uintptr(entriesNum),
+		uintptr(page),
+		modulePtr,
+		uintptr(moduleSize),
+		uintptr(bitFlag),
+		oldBase,
+		newBase,
+	)
+
+	if ret == 0 {
+		log.Println("Error process_reloc_block: ", err.Error())
+	}
+	return ret != 0
+}

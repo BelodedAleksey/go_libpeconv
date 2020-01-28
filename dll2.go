@@ -53,4 +53,6 @@ var (
 	procUpdateRemoteEntryPoint = peconv.MustFindProc("_Z25update_remote_entry_pointR20_PROCESS_INFORMATIONyb")
 	//DWORD peconv::get_entry_point_rva(IN const BYTE *pe_buffer)
 	procGetEntryPointRVA = peconv.MustFindProc("_ZN6peconv19get_entry_point_rvaEPKh")
+	//bool    process_reloc_block(BASE_RELOCATION_ENTRY *block, SIZE_T entriesNum, DWORD page, PVOID modulePtr, SIZE_T moduleSize, bool is64bit, RelocBlockCallback *callback)
+	procProcessRelocBlock = peconv.MustFindProc("_Z19process_reloc_blockPN6peconv22_BASE_RELOCATION_ENTRYEymPvybyy")
 )

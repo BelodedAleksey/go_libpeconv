@@ -222,7 +222,11 @@ func GetDirectoryEntry(
 	if gIs64Bit(peBuffer) {
 		ntHeaders64 := (*IMAGE_NT_HEADERS64)(unsafe.Pointer(ntHeaders))
 		peDir = &(ntHeaders64.OptionalHeader.DataDirectory[dirID])
+	} else {
+		ntHeaders32 := (*IMAGE_NT_HEADERS)(unsafe.Pointer(ntHeaders))
+		peDir = &(ntHeaders32.OptionalHeader.DataDirectory[dirID])
 	}
+	fmt.Println("PEDIR: ", *peDir)
 	if !allowEmpty && peDir.VirtualAddress == 0 {
 		return nil
 	}
@@ -263,19 +267,20 @@ func gApplyRelocations(
 	modulePtr uintptr, moduleSize uint64, newBase, oldBase uintptr,
 ) bool {
 	is64b := gIs64Bit(modulePtr)
-	callback := ApplyRelocCallback{is64b, oldBase, newBase}
-	return ProcessRelocationTable(modulePtr, moduleSize, &callback)
+	//callback := ApplyRelocCallback{is64b, oldBase, newBase}
+	return ProcessRelocationTable(modulePtr, moduleSize, is64b, oldBase, newBase)
 }
 
 //ProcessRelocBlock func
-func ProcessRelocBlock(
+func gProcessRelocBlock(
 	block *BASE_RELOCATION_ENTRY,
 	entriesNum uint64,
 	page uint32,
 	modulePtr uintptr,
 	moduleSize uint64,
 	is64bit bool,
-	callback *ApplyRelocCallback,
+	oldBase uintptr,
+	newBase uintptr,
 ) bool {
 	entry := block
 	var i uint64
@@ -288,28 +293,30 @@ func ProcessRelocBlock(
 		) {
 			break
 		}
+		log.Printf("Entry offset: %#x type: %#x\n", entry.Offset, entry.Type)
 		offset := uint32(entry.Offset)
 		eType := uint32(entry.Type)
 
 		if eType == 0 {
 			break
 		}
-
+		//Создаем коллбэк
+		callback := ApplyRelocCallback{is64bit, oldBase, newBase}
 		if eType != RELOC_32BIT_FIELD && eType != RELOC_64BIT_FIELD {
-			if callback != nil { //print debug messages only if the callback function was set
-				log.Printf("[-] Not supported relocations format at %d: %d\n", i, eType)
+			if &callback != nil { //print debug messages only if the callback function was set
+				log.Printf("[-] Not supported relocations format at %d: %#x\n", i, eType)
 			}
 			return false
 		}
 
 		relocField := page + offset
 		if relocField >= uint32(moduleSize) {
-			if callback != nil { //print debug messages only if the callback function was set
+			if &callback != nil { //print debug messages only if the callback function was set
 				log.Printf("[-] Malformed field: %lx\n", relocField)
 			}
 			return false
 		}
-		if callback != nil {
+		if &callback != nil {
 			isOK := callback.processRelocField(modulePtr + uintptr(relocField))
 			if !isOK {
 				log.Println("[-] Failed processing reloc field at: \n", relocField)
@@ -323,8 +330,9 @@ func ProcessRelocBlock(
 
 //ProcessRelocationTable func
 func ProcessRelocationTable(
-	modulePtr uintptr, moduleSize uint64, callback *ApplyRelocCallback,
+	modulePtr uintptr, moduleSize uint64, is64b bool, oldBase uintptr, newBase uintptr,
 ) bool {
+	fmt.Println("Before getDirectoryEntry!!!")
 	relocDir := GetDirectoryEntry(modulePtr, IMAGE_DIRECTORY_ENTRY_BASERELOC, false)
 	if relocDir == nil {
 		log.Println("[!] WARNING: no relocation table found!")
@@ -339,7 +347,7 @@ func ProcessRelocationTable(
 	}
 	maxSize := relocDir.Size
 	relocAddr := relocDir.VirtualAddress
-	is64b := gIs64Bit(modulePtr)
+	//is64b := gIs64Bit(modulePtr)
 
 	var reloc *IMAGE_BASE_RELOCATION
 
@@ -361,7 +369,7 @@ func ProcessRelocationTable(
 			break
 		}
 
-		var entriesNum uint64 = uint64((uintptr(reloc.SizeOfBlock) - 2*unsafe.Sizeof(*new(uint32))) / unsafe.Sizeof(*new(uint16)))
+		var entriesNum uint64 = uint64((uintptr(reloc.SizeOfBlock) - (2 * unsafe.Sizeof(*new(uint32)))) / unsafe.Sizeof(*new(uint16)))
 		page := reloc.VirtualAddress
 
 		block := (*BASE_RELOCATION_ENTRY)(unsafe.Pointer(uintptr(unsafe.Pointer(reloc)) + unsafe.Sizeof(*new(uint32))*2))
@@ -374,10 +382,12 @@ func ProcessRelocationTable(
 			log.Println("[-] Invalid address of relocations block")
 			return false
 		}
+
 		if ProcessRelocBlock(
-			block, entriesNum, page, modulePtr, moduleSize, is64b, callback) == false {
+			block, entriesNum, page, modulePtr, moduleSize, is64b, oldBase, newBase) == false {
 			return false
 		}
+
 	}
 	return parsedSize != 0
 }
