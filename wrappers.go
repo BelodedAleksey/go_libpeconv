@@ -306,10 +306,10 @@ func UpdateRemoteEntryPoint(
 }
 
 //GetEntryPointRVA func
-func GetEntryPointRVA(peBuffer uintptr) uint32 {
+func GetEntryPointRVA(peBuffer uintptr) uintptr {
 	ret, _, err := procGetEntryPointRVA.Call(peBuffer)
 	if ret == 0 {
 		log.Println("Error get_entry_point_rva: ", err.Error())
 	}
-	return uint32(ret)
+	return ret
 }
