@@ -73,11 +73,13 @@ func (r *BASE_RELOCATION_ENTRY) GetType() (_type uint16) {
 	return
 }
 
+//m128a struct
 type m128a struct {
 	low  uint64
 	high int64
 }
 
+//WOW64_FLOATING_SAVE_AREA struct
 type WOW64_FLOATING_SAVE_AREA struct {
 	ControlWord   uint32
 	StatusWord    uint32
@@ -90,6 +92,7 @@ type WOW64_FLOATING_SAVE_AREA struct {
 	Cr0NpxState   uint32
 }
 
+//WOW64_CONTEXT struct
 type WOW64_CONTEXT struct {
 	ContextFlags      uint32
 	Dr0               uint32
@@ -118,6 +121,7 @@ type WOW64_CONTEXT struct {
 	ExtendedRegisters [512]byte
 }
 
+//CONTEXT truct
 type CONTEXT struct {
 	p1home               uint64
 	p2home               uint64
