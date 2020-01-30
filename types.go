@@ -48,10 +48,29 @@ type IMAGE_BASE_RELOCATION struct {
 	SizeOfBlock    uint32
 }
 
-//BASE_RELOCATION_ENTRY
-type BASE_RELOCATION_ENTRY struct {
-	Offset uint16
-	Type   uint16
+//BASE_RELOCATION_ENTRY bit fields Offset uint16 :12 Type uint16 :4
+type BASE_RELOCATION_ENTRY uint16
+
+//GetOffset func
+func (r *BASE_RELOCATION_ENTRY) GetOffset() (_offset uint16) {
+	_offset = uint16(*r) & 0x0fff
+	return
+}
+
+//SetOffset func
+func (r *BASE_RELOCATION_ENTRY) SetOffset(_offset uint16) {
+	*r = *r | BASE_RELOCATION_ENTRY(_offset&0x0fff)
+}
+
+//SetType func
+func (r *BASE_RELOCATION_ENTRY) SetType(_type uint16) {
+	*r = *r | BASE_RELOCATION_ENTRY(_type&0xf000)
+}
+
+//GetType func
+func (r *BASE_RELOCATION_ENTRY) GetType() (_type uint16) {
+	_type = (uint16(*r) & 0xf000) >> 12
+	return
 }
 
 type m128a struct {

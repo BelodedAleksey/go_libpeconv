@@ -289,13 +289,14 @@ func gProcessRelocBlock(
 			modulePtr,
 			moduleSize,
 			uintptr(unsafe.Pointer(entry)),
-			uint64(unsafe.Sizeof(BASE_RELOCATION_ENTRY{})),
+			uint64(unsafe.Sizeof(*new(BASE_RELOCATION_ENTRY))),
 		) {
 			break
 		}
-		log.Printf("Entry offset: %#x type: %#x\n", entry.Offset, entry.Type)
-		offset := uint32(entry.Offset)
-		eType := uint32(entry.Type)
+		log.Printf("Start Entry: %#x\n", entry)
+		log.Printf("Entry offset: %#x type: %#x\n", entry.GetOffset(), entry.GetType())
+		offset := uint32(entry.GetOffset())
+		eType := uint32(entry.GetType())
 
 		if eType == 0 {
 			break
@@ -310,6 +311,7 @@ func gProcessRelocBlock(
 		}
 
 		relocField := page + offset
+		fmt.Printf("RelocField: %#x\n", relocField)
 		if relocField >= uint32(moduleSize) {
 			if &callback != nil { //print debug messages only if the callback function was set
 				log.Printf("[-] Malformed field: %lx\n", relocField)
@@ -323,7 +325,9 @@ func gProcessRelocBlock(
 				return false
 			}
 		}
+		log.Printf("End Entry offset: %#x type: %#x\n", entry.GetOffset(), entry.GetType())
 		entry = (*BASE_RELOCATION_ENTRY)(unsafe.Pointer(uintptr(unsafe.Pointer(entry)) + unsafe.Sizeof(*new(uint16))))
+		log.Printf("End Entry: %#x\n", entry)
 	}
 	return true
 }
@@ -377,13 +381,15 @@ func ProcessRelocationTable(
 			modulePtr,
 			moduleSize,
 			uintptr(unsafe.Pointer(block)),
-			uint64(unsafe.Sizeof(BASE_RELOCATION_ENTRY{})),
+			uint64(unsafe.Sizeof(*new(BASE_RELOCATION_ENTRY))),
 		) {
 			log.Println("[-] Invalid address of relocations block")
 			return false
 		}
 
-		if ProcessRelocBlock(
+		log.Printf(
+			"After Valid block offset: %#x type: %#x\n", block.GetOffset(), block.GetType())
+		if gProcessRelocBlock(
 			block, entriesNum, page, modulePtr, moduleSize, is64b, oldBase, newBase) == false {
 			return false
 		}
