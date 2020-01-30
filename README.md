@@ -1,4 +1,4 @@
-THIS IS INCOMPLETE/IN PROGRESS
+DONE!!! It's Working
 
 Try to convert this project https://github.com/hasherezade/libpeconv in Golang
 
